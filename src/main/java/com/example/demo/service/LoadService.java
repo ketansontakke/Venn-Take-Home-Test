@@ -11,6 +11,7 @@ import org.springframework.stereotype.Service;
 import com.example.demo.dto.request.LoadRequest;
 import com.example.demo.dto.response.LoadResponse;
 import com.example.demo.entity.LoadEntity;
+import com.example.demo.exception.LoadRejectedException;
 import com.example.demo.repository.LoadRepository;
 import com.example.demo.util.LoadUtils;
 
@@ -64,10 +65,19 @@ public class LoadService {
 
 			long dailyCount = dailyLoads.stream().filter(LoadEntity::isAccepted).count();
 
-			boolean accepted = dailySum.add(amount).compareTo(DAILY_LIMIT) <= 0
-					&& weeklySum.add(amount).compareTo(WEEKLY_LIMIT) <= 0 && dailyCount < DAILY_COUNT_LIMIT;
+			if (dailyCount >= DAILY_COUNT_LIMIT) {
+				throw new LoadRejectedException("DAILY_COUNT_EXCEEDED", "Maximum number of daily loads exceeded");
+			}
 
-			log.info("Decision for id={}: accepted={}", request.getId(), accepted);
+			if (dailySum.add(amount).compareTo(DAILY_LIMIT) > 0) {
+				throw new LoadRejectedException("DAILY_AMOUNT_EXCEEDED", "Daily load amount limit exceeded");
+			}
+
+			if (weeklySum.add(amount).compareTo(WEEKLY_LIMIT) > 0) {
+				throw new LoadRejectedException("WEEKLY_AMOUNT_EXCEEDED", "Weekly load amount limit exceeded");
+			}
+
+			log.info("Decision for id={}: accepted={}", request.getId(), true);
 
 			// Persist result
 			LoadEntity entity = new LoadEntity();
@@ -75,11 +85,11 @@ public class LoadService {
 			entity.setCustomerId(request.getCustomer_id());
 			entity.setAmount(amount);
 			entity.setTimestamp(timestamp);
-			entity.setAccepted(accepted);
+			entity.setAccepted(true);
 
 			repository.save(entity);
 
-			return new LoadResponse(request.getId(), request.getCustomer_id(), accepted);
+			return new LoadResponse(request.getId(), request.getCustomer_id(), true);
 
 		} catch (Exception e) {
 			log.error("Error processing load request id={}", request.getId(), e);

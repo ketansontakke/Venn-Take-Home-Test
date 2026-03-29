@@ -2,6 +2,7 @@ package com.example.demo.processor;
 
 import java.io.BufferedReader;
 import java.io.BufferedWriter;
+import java.io.File;
 import java.io.FileWriter;
 import java.io.InputStreamReader;
 
@@ -12,6 +13,7 @@ import org.springframework.stereotype.Component;
 
 import com.example.demo.dto.request.LoadRequest;
 import com.example.demo.dto.response.LoadResponse;
+import com.example.demo.exception.LoadRejectedException;
 import com.example.demo.service.LoadService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
@@ -27,32 +29,51 @@ public class FileProcessor {
 		this.service = service;
 	}
 
-	public void processFile(String inputPath, String outputPath) throws Exception {
+	public void processFile(String inputPath, String outputPath) {
+
+		log.info("Starting file processing. Input={}, Output={}", inputPath, outputPath);
+
+		// Ensure output directory exists
+		File outputFile = new File(outputPath);
+		outputFile.getParentFile().mkdirs();
+
 		try (BufferedReader reader = new BufferedReader(
 				new InputStreamReader(new ClassPathResource(inputPath).getInputStream()));
-				BufferedWriter writer = new BufferedWriter(new FileWriter(outputPath))) {
+				BufferedWriter writer = new BufferedWriter(new FileWriter(outputFile))) {
 
-			String line = "";
+			String line;
 			int lineNumber = 0;
 
-			try {
-				while ((line = reader.readLine()) != null) {
-					lineNumber++;
+			while ((line = reader.readLine()) != null) {
+				lineNumber++;
 
+				try {
 					LoadRequest request = mapper.readValue(line, LoadRequest.class);
+
 					LoadResponse response = service.process(request);
 
-					if (response != null) {
-						writer.write(mapper.writeValueAsString(response));
-						writer.newLine();
-					} else {
-						log.warn("Duplicate skipped at line {}", lineNumber);
-					}
-				}
+					// Accepted case
+					writer.write(mapper.writeValueAsString(response));
+					writer.newLine();
 
-			} catch (Exception e) {
-				log.error("Failed processing line {}: {}", lineNumber, line, e);
+				} catch (LoadRejectedException ex) {
+					// Rejected case: still write output (accepted=false)
+					log.warn("Rejected load at line {}: {} - {}", lineNumber, ex.getCode(), ex.getMessage());
+
+					LoadRequest request = mapper.readValue(line, LoadRequest.class);
+
+					LoadResponse rejectedResponse = new LoadResponse(request.getId(), request.getCustomer_id(), false);
+
+					writer.write(mapper.writeValueAsString(rejectedResponse));
+					writer.newLine();
+
+				} catch (Exception ex) {
+					// Bad input or unexpected error
+					log.error("Failed processing line {}: {}", lineNumber, line, ex);
+				}
 			}
+
+			log.info("File processing completed successfully");
 
 		} catch (Exception e) {
 			log.error("Failed to process file", e);
