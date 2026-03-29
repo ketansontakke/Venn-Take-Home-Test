@@ -76,10 +76,12 @@ Rejected Transaction
 }
 ```
 
+## Tests
+Unit tests were created with JUnit to verifiy the functionality of the application. The tests can be found in src/test/java. In Eclipse, you can right-click on the folder (src/test/java) and run as a JUnit test. I also created a test suite called AllTestsSuite.java under com.example.demo, and that can also be used to run all tests at once. You can also run `mvn test` in the terminal.
+
 ## In-Memory Database (H2)
 
 This project uses H2 in-memory database as a simple, fast storage mechanism. It gives us the ability to validate load transactions as they are posted.
-
 
 # Summary
 I have created a simple backend processor that validates load transactions via an inputed text file. Then as the server remains open, the user is able to POST additional transactions via Swagger. The project structure is simple, and is easily extendable to accommodate new features. A user interface can now retrieve data from this backend application via a POST request. 
