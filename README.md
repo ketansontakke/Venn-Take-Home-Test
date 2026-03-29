@@ -12,7 +12,7 @@ The application supports:
 - Interactive API testing using Swagger 
 
 
-## How to Run the Project
+## How to Run the Project After Cloning Locally
 
 ### 1. Run the Application
 
