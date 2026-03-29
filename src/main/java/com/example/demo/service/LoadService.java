@@ -1,88 +1,89 @@
 package com.example.demo.service;
 
+import java.math.BigDecimal;
+import java.time.Instant;
+import java.util.List;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.stereotype.Service;
+
 import com.example.demo.dto.request.LoadRequest;
 import com.example.demo.dto.response.LoadResponse;
 import com.example.demo.entity.LoadEntity;
 import com.example.demo.repository.LoadRepository;
 import com.example.demo.util.LoadUtils;
 
-import org.springframework.stereotype.Service;
-
-import java.math.BigDecimal;
-import java.time.Instant;
-import java.util.List;
-
 @Service
 public class LoadService {
 
-    private static final BigDecimal DAILY_LIMIT = new BigDecimal("5000");
-    private static final BigDecimal WEEKLY_LIMIT = new BigDecimal("20000");
-    private static final int DAILY_COUNT_LIMIT = 3;
+	private static final Logger log = LoggerFactory.getLogger(LoadService.class);
 
-    private final LoadRepository repository;
+	private static final BigDecimal DAILY_LIMIT = new BigDecimal("5000");
+	private static final BigDecimal WEEKLY_LIMIT = new BigDecimal("20000");
+	private static final int DAILY_COUNT_LIMIT = 3;
 
-    public LoadService(LoadRepository repository) {
-        this.repository = repository;
-    }
+	private final LoadRepository repository;
 
-    public LoadResponse process(LoadRequest request) {
+	public LoadService(LoadRepository repository) {
+		this.repository = repository;
+	}
 
-        // Idempotency check
-        if (repository.existsByCustomerIdAndLoadId(
-                request.getCustomer_id(), request.getId())) {
-            return null; // ignore duplicate
-        }
+	public LoadResponse process(LoadRequest request) {
 
-        BigDecimal amount = LoadUtils.parseAmount(request.getLoad_amount());
-        Instant timestamp = Instant.parse(request.getTime());
+		log.info("Processing load request: id={}, customer={}", request.getId(), request.getCustomer_id());
 
-        Instant dayStart = LoadUtils.startOfDay(timestamp);
-        Instant dayEnd = LoadUtils.endOfDay(timestamp);
+		try {
+			// Idempotency check
+			if (repository.existsByCustomerIdAndLoadId(request.getCustomer_id(), request.getId())) {
 
-        Instant weekStart = LoadUtils.startOfWeek(timestamp);
-        Instant weekEnd = LoadUtils.endOfWeek(timestamp);
+				log.warn("Duplicate load detected: id={}, customer={}", request.getId(), request.getCustomer_id());
+				return null; // ignore duplicate
+			}
 
-        List<LoadEntity> dailyLoads =
-                repository.findByCustomerIdAndTimestampBetween(
-                        request.getCustomer_id(), dayStart, dayEnd);
+			BigDecimal amount = LoadUtils.parseAmount(request.getLoad_amount());
+			Instant timestamp = Instant.parse(request.getTime());
 
-        List<LoadEntity> weeklyLoads =
-                repository.findByCustomerIdAndTimestampBetween(
-                        request.getCustomer_id(), weekStart, weekEnd);
+			Instant dayStart = LoadUtils.startOfDay(timestamp);
+			Instant dayEnd = LoadUtils.endOfDay(timestamp);
 
-        BigDecimal dailySum = dailyLoads.stream()
-                .filter(LoadEntity::isAccepted)
-                .map(LoadEntity::getAmount)
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
+			Instant weekStart = LoadUtils.startOfWeek(timestamp);
+			Instant weekEnd = LoadUtils.endOfWeek(timestamp);
 
-        BigDecimal weeklySum = weeklyLoads.stream()
-                .filter(LoadEntity::isAccepted)
-                .map(LoadEntity::getAmount)
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
+			List<LoadEntity> dailyLoads = repository.findByCustomerIdAndTimestampBetween(request.getCustomer_id(),
+					dayStart, dayEnd);
 
-        long dailyCount = dailyLoads.stream()
-                .filter(LoadEntity::isAccepted)
-                .count();
+			List<LoadEntity> weeklyLoads = repository.findByCustomerIdAndTimestampBetween(request.getCustomer_id(),
+					weekStart, weekEnd);
 
-        boolean accepted =
-                dailySum.add(amount).compareTo(DAILY_LIMIT) <= 0 &&
-                weeklySum.add(amount).compareTo(WEEKLY_LIMIT) <= 0 &&
-                dailyCount < DAILY_COUNT_LIMIT;
+			BigDecimal dailySum = dailyLoads.stream().filter(LoadEntity::isAccepted).map(LoadEntity::getAmount)
+					.reduce(BigDecimal.ZERO, BigDecimal::add);
 
-        // Persist result
-        LoadEntity entity = new LoadEntity();
-        entity.setLoadId(request.getId());
-        entity.setCustomerId(request.getCustomer_id());
-        entity.setAmount(amount);
-        entity.setTimestamp(timestamp);
-        entity.setAccepted(accepted);
+			BigDecimal weeklySum = weeklyLoads.stream().filter(LoadEntity::isAccepted).map(LoadEntity::getAmount)
+					.reduce(BigDecimal.ZERO, BigDecimal::add);
 
-        repository.save(entity);
+			long dailyCount = dailyLoads.stream().filter(LoadEntity::isAccepted).count();
 
-        return new LoadResponse(
-                request.getId(),
-                request.getCustomer_id(),
-                accepted
-        );
-    }
+			boolean accepted = dailySum.add(amount).compareTo(DAILY_LIMIT) <= 0
+					&& weeklySum.add(amount).compareTo(WEEKLY_LIMIT) <= 0 && dailyCount < DAILY_COUNT_LIMIT;
+
+			log.info("Decision for id={}: accepted={}", request.getId(), accepted);
+
+			// Persist result
+			LoadEntity entity = new LoadEntity();
+			entity.setLoadId(request.getId());
+			entity.setCustomerId(request.getCustomer_id());
+			entity.setAmount(amount);
+			entity.setTimestamp(timestamp);
+			entity.setAccepted(accepted);
+
+			repository.save(entity);
+
+			return new LoadResponse(request.getId(), request.getCustomer_id(), accepted);
+
+		} catch (Exception e) {
+			log.error("Error processing load request id={}", request.getId(), e);
+			throw e;
+		}
+	}
 }

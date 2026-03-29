@@ -26,9 +26,7 @@ public class LoadController {
 		LoadResponse response = service.process(request);
 
 		if (response == null) {
-			// If there is a duplicate load, ignore it. But return something for
-			// better UX.
-			return new LoadResponse(request.getId(), request.getCustomer_id(), false);
+			throw new IllegalArgumentException("Duplicate load ID");
 		}
 
 		return response;
