@@ -19,9 +19,11 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 
 import com.example.demo.dto.request.LoadRequest;
+import com.example.demo.dto.response.LoadResponse;
 import com.example.demo.entity.LoadEntity;
 import com.example.demo.repository.LoadRepository;
 import com.example.demo.service.LoadService;
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 @SpringBootTest
 public class FileProcessorTest {
@@ -60,20 +62,42 @@ public class FileProcessorTest {
 	@Test
 	void shouldMatchExpectedOutput() throws Exception {
 
-		String actual = "data/output/actualOutput.txt";
-		String expected = "data/output/expectedOutput.txt";
+		String actualOutput = "data/output/actualOutput.txt";
+		String expectedOutput = "data/output/expectedOutput.txt";
 
-		processor.processFile("input/expectedInput.txt", actual);
+		processor.processFile("input/expectedInput.txt", actualOutput);
 
-		List<String> actualLines = Files.readAllLines(Path.of(actual));
-		List<String> expectedLines = Files.readAllLines(Path.of(expected));
+		ObjectMapper mapper = new ObjectMapper();
 
-		// TODO: compare each field's value, not just size
+		List<LoadResponse> actualList = Files.readAllLines(Path.of(actualOutput)).stream().map(line -> {
+			try {
+				return mapper.readValue(line, LoadResponse.class);
+			} catch (Exception e) {
+				throw new RuntimeException(e);
+			}
+		}).toList();
 
-		assertEquals(expectedLines.size(), actualLines.size());
+		List<LoadResponse> expectedList = Files.readAllLines(Path.of(expectedOutput)).stream().map(line -> {
+			try {
+				return mapper.readValue(line, LoadResponse.class);
+			} catch (Exception e) {
+				throw new RuntimeException(e);
+			}
+		}).toList();
 
-		for (int i = 0; i < actualLines.size(); i++) {
-			assertEquals(expectedLines.get(i), actualLines.get(i), "Mismatch at line " + i);
+		// First check size
+		assertEquals(expectedList.size(), actualList.size(), "List sizes differ");
+
+		// Compare each field
+		for (int i = 0; i < actualList.size(); i++) {
+
+			LoadResponse actual = actualList.get(i);
+			LoadResponse expected = expectedList.get(i);
+
+			assertEquals(expected.getId(), actual.getId(), "Mismatch at index " + i + " for id");
+			assertEquals(expected.getCustomer_id(), actual.getCustomer_id(),
+					"Mismatch at index " + i + " for customer_id");
+			assertEquals(expected.isAccepted(), actual.isAccepted(), "Mismatch at index " + i + " for accepted");
 		}
 	}
 
